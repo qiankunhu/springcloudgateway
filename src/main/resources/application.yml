@@ -1,0 +1,56 @@
+
+server:
+  port: 9999
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: my_route
+          uri: lb://my-load-balanced-service  #  http://127.0.0.1:8088 lb://consumer-service lb 代表从注册中心获取服务，且已负载均衡方式转发
+          predicates:
+            - Path=/app/** #断言路由
+          filters:
+            - StripPrefix=1 #表示路由时会去除一位 如 api/app/login app/login
+            - name: RequestRateLimiter #名称必须是RequestRateLimiter
+              args:
+                key-resolver: "#{@urlResolver}"  #使用SpEL按名称引用bean
+                redis-rate-limiter.replenishRate: 1 #令牌桶每秒填充平均速率
+                redis-rate-limiter.burstCapacity: 1 #令牌桶的容量，允许在一秒钟内完成的最大请求数
+            - name: Hystrix #断路器的配置
+              args:
+               name: fallbackcmd
+               fallbackUri: forward:/defaultfallback
+        - id: my-consumer-service2
+          uri: http://127.0.0.1:8005  #  http://127.0.0.1:8088 lb://consumer-service lb 代表从注册中心获取服务，且已负载均衡方式转发
+          predicates:
+            - Path=/admin/** #只漏油转发
+          filters:
+            - StripPrefix=1 #表示路由时会去除一位 如 api/app/login app/login
+            - name: RequestRateLimiter #名称必须是RequestRateLimiter
+              args:
+                key-resolver: "#{@urlResolver}"  #使用SpEL按名称引用bean
+                redis-rate-limiter.replenishRate: 1 #允许用户每秒处理多少个请求
+                redis-rate-limiter.burstCapacity: 1 #令牌桶的容量，允许在一秒钟内完成的最大请求数
+            - name: Hystrix #断路器的配置
+              args:
+                name: fallbackcmd
+                fallbackUri: forward:/defaultfallback
+
+  redis:
+    host: localhost
+    port: 6379
+    database: 0
+
+my-load-balanced-service:
+  ribbon:
+    listOfServers: 127.0.0.1:8088,127.0.0.1:8099
+    NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RoundRobinRule
+
+
+# 服务响应时间 6 s , 超过 6s 未响应走熔断
+hystrix.command.fallbackcmd.execution.isolation.thread.timeoutInMilliseconds: 6000
+
+
+
+
